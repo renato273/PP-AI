@@ -77,7 +77,7 @@ variables:
 
 .prod_runner:
   tags:
-    - k8s-prod-hq
+    - k8s-prod-tr-hq
 
 # ── Reglas reutilizables ──────────────────────────────────────────────────────
 .rules_always:
