@@ -75,6 +75,10 @@ variables:
   BACKEND_IMAGE:  "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-backend"
   FRONTEND_IMAGE: "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-frontend"
 
+.prod_runner:
+  tags:
+    - k8s-prod-hq
+
 # ── Reglas reutilizables ──────────────────────────────────────────────────────
 .rules_always:
   rules:
@@ -135,6 +139,7 @@ build:backend:
   extends:
     - .rules_main
     - .docker_job
+    - .prod_runner
   script:
     - |
       TAGS="-t ${BACKEND_IMAGE}:${CI_COMMIT_SHA} -t ${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
@@ -149,6 +154,7 @@ build:frontend:
   extends:
     - .rules_main
     - .docker_job
+    - .prod_runner
   script:
     - |
       TAGS="-t ${FRONTEND_IMAGE}:${CI_COMMIT_SHA} -t ${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
