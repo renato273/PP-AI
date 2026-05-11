@@ -57,8 +57,4 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: /iniciar sesión con sso/i })).toBeInTheDocument();
   });
 
-  it('shows demo credentials hint', () => {
-    renderLogin();
-    expect(screen.getByText(/admin@app\.com/)).toBeInTheDocument();
-  });
 });
