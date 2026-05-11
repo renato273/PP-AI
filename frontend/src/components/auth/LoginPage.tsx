@@ -139,9 +139,6 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <p className="text-xs text-gray-400 text-center">Demo: admin@app.com / admin123</p>
-        </div>
       </div>
     </div>
   );
