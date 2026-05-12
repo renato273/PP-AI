@@ -241,6 +241,14 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Panel de configuración de la aplicación (fila única, JSON)
+CREATE TABLE IF NOT EXISTS app_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  settings JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT app_settings_single_row CHECK (id = 1)
+);
+
 -- Índices
 CREATE INDEX IF NOT EXISTS idx_proyectos_programa ON proyectos(programa_id);
 CREATE INDEX IF NOT EXISTS idx_tareas_proyecto ON tareas(proyecto_id);

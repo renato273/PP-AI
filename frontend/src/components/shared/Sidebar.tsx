@@ -14,6 +14,7 @@ import {
   Sun,
   Bot,
   X,
+  Settings,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useUIStore } from '../../store/uiStore';
@@ -27,6 +28,7 @@ const navKeys = [
   { to: '/equipo', icon: Users, key: 'nav.team' },
   { to: '/ai-config', icon: Bot, key: 'nav.aiconfig', adminOnly: true },
   { to: '/usuarios', icon: ShieldCheck, key: 'nav.users', adminOnly: true },
+  { to: '/admin/settings', icon: Settings, key: 'nav.settings', adminOnly: true },
 ] as const;
 
 function SidebarContent({ mobile = false }: { mobile?: boolean }) {

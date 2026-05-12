@@ -12,6 +12,7 @@ import EquipoPage from './pages/EquipoPage';
 import CronogramaPage from './pages/CronogramaPage';
 import UsuariosPage from './pages/UsuariosPage';
 import AiConfigPage from './pages/AiConfigPage';
+import AdminSettingsPage from './pages/AdminSettingsPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/equipo" element={<EquipoPage />} />
           <Route path="/usuarios" element={<ProtectedRoute roles={['admin']}><UsuariosPage /></ProtectedRoute>} />
           <Route path="/ai-config" element={<ProtectedRoute roles={['admin']}><AiConfigPage /></ProtectedRoute>} />
+          <Route path="/admin/settings" element={<ProtectedRoute roles={['admin']}><AdminSettingsPage /></ProtectedRoute>} />
         </Route>
         <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/'} replace />} />
       </Routes>

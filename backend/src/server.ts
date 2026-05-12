@@ -15,6 +15,7 @@ import comentariosRoutes from './routes/comentarios.js';
 import sprintsRoutes from './routes/sprints.js';
 import aiRoutes from './routes/ai.js';
 import actividadRoutes from './routes/actividad.js';
+import adminRoutes from './routes/admin.js';
 import { startReminderJobs } from './jobs/reminders.js';
 import { join } from 'path';
 
@@ -39,6 +40,7 @@ app.use('/api/comentarios', comentariosRoutes);
 app.use('/api/sprints', sprintsRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/actividad', actividadRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Static file serving for uploads
 app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
