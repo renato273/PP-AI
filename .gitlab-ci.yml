@@ -66,7 +66,7 @@
 stages:
   - test
   - build
-  - deploy
+  - gitops
 
 # ── Variables globales ────────────────────────────────────────────────────────
 variables:
@@ -164,100 +164,40 @@ build:frontend:
       DOCKER_BUILDKIT=1 docker build --cache-from "${FRONTEND_IMAGE}:latest" ${TAGS} ./frontend
       docker push --all-tags "${FRONTEND_IMAGE}"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STAGE: deploy  (manual — solo main / tags)
-#
-# Requisitos en el servidor:
-#   - Docker + Docker Compose v2 instalados
-#   - El usuario DEPLOY_USER tiene acceso a docker
-#   - El directorio DEPLOY_PATH contiene docker-compose.yml y docker-compose.prod.yml
-#   - El servidor puede hacer pull de HARBOR_URL
-# ══════════════════════════════════════════════════════════════════════════════
-
-deploy:production:
-  stage: deploy
+update:manifests:
+  stage: gitops
   extends: .rules_main
-  when: manual          # Se dispara manualmente desde la UI de GitLab
   image: alpine:3.20
   before_script:
-    - apk add --no-cache openssh-client
-    - eval $(ssh-agent -s)
-    # DEPLOY_SSH_KEY debe ser de tipo "File" en GitLab → apunta a un fichero temp
-    - chmod 400 "$DEPLOY_SSH_KEY"
-    - ssh-add "$DEPLOY_SSH_KEY"
-    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+    - apk add --no-cache git bash yq
+    - git config --global user.email "ci@gitlab"
+    - git config --global user.name "gitlab-ci"
   script:
     - |
-      # ── 1. Generar .env de producción con todas las variables de GitLab ──
-      cat > .env.deploy << ENV
-      # Generado por GitLab CI — commit ${CI_COMMIT_SHA}
-      # ── Base de datos ──────────────────────────────────────────────────
-      DB_NAME=${DB_NAME}
-      DB_USER=${DB_USER}
-      DB_PASSWORD=${DB_PASSWORD}
+      # Tag a desplegar:
+      # - si viene tag (v1.2.3) úsalo
+      # - si no, usa SHA
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        IMAGE_TAG="$CI_COMMIT_TAG"
+      else
+        IMAGE_TAG="$CI_COMMIT_SHA"
+      fi
+      echo "Deploying tag: $IMAGE_TAG"
 
-      # ── JWT ────────────────────────────────────────────────────────────
-      JWT_SECRET=${JWT_SECRET}
+      # Clonar repo GitOps con token
+      # Ejemplo: https://oauth2:<token>@gitlab.../pp-ai-manifests.git
+      GITOPS_AUTH_URL="$(echo "$GITOPS_REPO_URL" | sed "s#https://#https://oauth2:${GITOPS_TOKEN}@#")"
+      git clone --branch "$GITOPS_TARGET_BRANCH" "$GITOPS_AUTH_URL" gitops
+      cd gitops
 
-      # ── App URL ────────────────────────────────────────────────────────
-      FRONTEND_URL=${FRONTEND_URL}
-      FRONTEND_PORT=${FRONTEND_PORT}
+      # Actualizar tags en overlay kustomization.yaml
+      OVERLAY_FILE="${GITOPS_PATH_OVERLAY}/kustomization.yaml"
 
-      # ── Email ──────────────────────────────────────────────────────────
-      ENABLE_EMAIL=${ENABLE_EMAIL}
-      SMTP_FROM=${SMTP_FROM}
-      SMTP_HOST=${SMTP_HOST}
-      SMTP_PORT=${SMTP_PORT}
-      SMTP_SECURE=${SMTP_SECURE}
-      SMTP_USER=${SMTP_USER}
-      SMTP_PASS=${SMTP_PASS}
+      yq -i '
+        (.images[] | select(.name == "registry-nonprod.tigocloud.net/pp-ai/pp-ai-backend") ).newTag = strenv(IMAGE_TAG) |
+        (.images[] | select(.name == "registry-nonprod.tigocloud.net/pp-ai/pp-ai-frontend")).newTag = strenv(IMAGE_TAG)
+      ' "$OVERLAY_FILE"
 
-      # ── Google OAuth ───────────────────────────────────────────────────
-      GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
-
-      # ── Keycloak SSO ───────────────────────────────────────────────────
-      KEYCLOAK_URL=${KEYCLOAK_URL}
-      KEYCLOAK_PUBLIC_URL=${KEYCLOAK_PUBLIC_URL}
-      KEYCLOAK_REALM=${KEYCLOAK_REALM}
-      KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
-      KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
-      KEYCLOAK_CALLBACK_URL=${KEYCLOAK_CALLBACK_URL}
-
-      # ── Keycloak Admin ─────────────────────────────────────────────────
-      KC_ADMIN_USER=${KC_ADMIN_USER}
-      KC_ADMIN_PASSWORD=${KC_ADMIN_PASSWORD}
-      KC_DB_USER=${KC_DB_USER}
-      KC_DB_PASSWORD=${KC_DB_PASSWORD}
-
-      # ── Harbor (para docker-compose.prod.yml) ──────────────────────────
-      HARBOR_URL=${HARBOR_URL}
-      HARBOR_PROJECT=${HARBOR_PROJECT}
-      IMAGE_TAG=${CI_COMMIT_SHA}
-      ENV
-
-      # ── 2. Copiar .env al servidor ───────────────────────────────────
-      scp .env.deploy ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/.env
-
-      # ── 3. Pull de imágenes nuevas y restart ─────────────────────────
-      ssh ${DEPLOY_USER}@${DEPLOY_HOST} "
-        set -e
-        cd ${DEPLOY_PATH}
-
-        echo '▶ Login en Harbor...'
-        echo '${HARBOR_PASSWORD}' | docker login '${HARBOR_URL}' -u '${HARBOR_USER}' --password-stdin
-
-        echo '▶ Pull de imágenes (tag: ${CI_COMMIT_SHA})...'
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-
-        echo '▶ Reiniciando servicios...'
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --remove-orphans
-
-        echo '▶ Estado final:'
-        docker compose ps
-      "
-  environment:
-    name: production
-    url: $FRONTEND_URL
+      git add "$OVERLAY_FILE"
+      git commit -m "pp-ai: deploy ${IMAGE_TAG} from ${CI_PROJECT_PATH}@${CI_COMMIT_SHA}" || echo "No changes to commit"
+      git push origin "$GITOPS_TARGET_BRANCH"
