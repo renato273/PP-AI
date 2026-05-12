@@ -2,7 +2,7 @@
  * Unit tests for LoginPage component.
  * Verifies structure, SSO buttons, and error-param handling.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
 import LoginPage from '../components/auth/LoginPage';
@@ -14,6 +14,13 @@ vi.mock('../store/authStore', () => ({
 
 vi.mock('react-hot-toast', () => ({
   default: { error: vi.fn(), success: vi.fn() },
+}));
+
+// Both providers active so SSO buttons render
+vi.mock('../services/api', () => ({
+  api: {
+    getAuthProviders: () => Promise.resolve({ google: true, keycloak: true }),
+  },
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -47,14 +54,18 @@ describe('LoginPage', () => {
     expect(btn).toHaveAttribute('type', 'submit');
   });
 
-  it('renders Google SSO button', () => {
+  it('renders Google SSO button', async () => {
     renderLogin();
-    expect(screen.getByRole('button', { name: /iniciar sesión con google/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /iniciar sesión con google/i })).toBeInTheDocument()
+    );
   });
 
-  it('renders Keycloak SSO button', () => {
+  it('renders Keycloak SSO button', async () => {
     renderLogin();
-    expect(screen.getByRole('button', { name: /iniciar sesión con sso/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /iniciar sesión con sso/i })).toBeInTheDocument()
+    );
   });
 
 });
