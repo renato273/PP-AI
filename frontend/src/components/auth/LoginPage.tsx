@@ -1,9 +1,9 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { Lock, Mail, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useEffect } from 'react';
+import { api } from '../../services/api';
 
 function GoogleIcon() {
   return (
@@ -33,12 +33,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const { login, isLoading } = useAuthStore();
   const [searchParams] = useSearchParams();
+  const [providers, setProviders] = useState<{ google: boolean; keycloak: boolean }>({
+    google: false, keycloak: false,
+  });
 
   useEffect(() => {
     const error = searchParams.get('error');
     if (error === 'google_failed') toast.error('Error al iniciar sesión con Google');
+    if (error === 'google_not_configured') toast.error('Google OAuth no está configurado');
     if (error === 'keycloak_failed') toast.error('Error al iniciar sesión con SSO');
     if (error === 'keycloak_not_configured') toast.error('SSO no está configurado en el servidor');
+    // Load active providers
+    api.getAuthProviders().then(setProviders).catch(() => {});
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -110,34 +116,40 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-5">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
+        {(providers.google || providers.keycloak) && (
+          <div className="mt-5">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-xs text-gray-400">
+                <span className="bg-white px-2">o continúa con</span>
+              </div>
             </div>
-            <div className="relative flex justify-center text-xs text-gray-400 bg-white px-2">
-              <span className="bg-white px-2">o continúa con</span>
-            </div>
+
+            {providers.google && (
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                className="mt-4 w-full flex items-center justify-center gap-3 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <GoogleIcon />
+                Iniciar sesión con Google
+              </button>
+            )}
+
+            {providers.keycloak && (
+              <button
+                type="button"
+                onClick={handleKeycloakLogin}
+                className="mt-3 w-full flex items-center justify-center gap-3 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <KeycloakIcon />
+                Iniciar sesión con SSO (Keycloak)
+              </button>
+            )}
           </div>
-
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            className="mt-4 w-full flex items-center justify-center gap-3 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <GoogleIcon />
-            Iniciar sesión con Google
-          </button>
-
-          <button
-            type="button"
-            onClick={handleKeycloakLogin}
-            className="mt-3 w-full flex items-center justify-center gap-3 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <KeycloakIcon />
-            Iniciar sesión con SSO (Keycloak)
-          </button>
-        </div>
+        )}
 
       </div>
     </div>

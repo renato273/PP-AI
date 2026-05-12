@@ -184,4 +184,12 @@ export const api = {
     }
     return res.json() as Promise<{ mensaje: string; acciones_ejecutadas: { tipo: string; descripcion: string; exito: boolean }[] }>;
   },
+
+  // Auth providers (public — no auth required)
+  getAuthProviders: () => request<{ google: boolean; keycloak: boolean }>('/auth/providers'),
+
+  // Admin settings
+  getAdminSettings: () => request<any>('/admin/settings'),
+  updateAdminSettings: (data: any) =>
+    request<any>('/admin/settings', { method: 'PUT', body: JSON.stringify(data) }),
 };
