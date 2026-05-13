@@ -18,12 +18,11 @@ variables:
   DOCKER_TLS_CERTDIR: "/certs"
   DOCKER_DRIVER: overlay2
 
-  # Harbor
-  HARBOR_URL: "registry-nonprod.tigocloud.net"
-  HARBOR_PROJECT: "pp-ai"
+  BACKEND_IMAGE:        "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-backend"
+  FRONTEND_IMAGE:       "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-frontend"
 
-  BACKEND_IMAGE:  "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-backend"
-  FRONTEND_IMAGE: "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-frontend"
+  BACKEND_CACHE_IMAGE:  "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-backend-cache"
+  FRONTEND_CACHE_IMAGE: "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-frontend-cache"
 
 # Runner
 .prod_runner:
@@ -103,28 +102,27 @@ build:backend:
     - |
       set -euo pipefail
 
-      echo "Building BACKEND image: ${BACKEND_IMAGE}"
-
-      # Cache estable (no usar latest para cache)
-      docker pull "${BACKEND_IMAGE}:buildcache" 2>/dev/null || true
+      # Cache separado (no ensucia el repo "real")
+      docker pull "${BACKEND_CACHE_IMAGE}:buildcache" 2>/dev/null || true
 
       DOCKER_BUILDKIT=1 docker build \
-        --cache-from "${BACKEND_IMAGE}:buildcache" \
+        --cache-from "${BACKEND_CACHE_IMAGE}:buildcache" \
         -t "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" \
         -t "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
         ./backend
 
-      # latest solo como puntero (main / releases)
+      # latest solo como puntero
       if [ "${CI_COMMIT_BRANCH:-}" = "main" ]; then
         docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:latest"
       fi
 
+      # release tag (si existe)
       if [ -n "${CI_COMMIT_TAG:-}" ]; then
         docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:${CI_COMMIT_TAG}"
         docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:latest"
       fi
 
-      # Push explícito (NO --all-tags)
+      # Push explícito (sin --all-tags)
       docker push "${BACKEND_IMAGE}:${CI_COMMIT_SHA}"
       docker push "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
 
@@ -137,9 +135,9 @@ build:backend:
         docker push "${BACKEND_IMAGE}:latest"
       fi
 
-      # Actualiza buildcache al final
-      docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:buildcache"
-      docker push "${BACKEND_IMAGE}:buildcache"
+      # Publica cache separado
+      docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_CACHE_IMAGE}:buildcache"
+      docker push "${BACKEND_CACHE_IMAGE}:buildcache"
 
 build:frontend:
   stage: build
@@ -151,12 +149,10 @@ build:frontend:
     - |
       set -euo pipefail
 
-      echo "Building FRONTEND image: ${FRONTEND_IMAGE}"
-
-      docker pull "${FRONTEND_IMAGE}:buildcache" 2>/dev/null || true
+      docker pull "${FRONTEND_CACHE_IMAGE}:buildcache" 2>/dev/null || true
 
       DOCKER_BUILDKIT=1 docker build \
-        --cache-from "${FRONTEND_IMAGE}:buildcache" \
+        --cache-from "${FRONTEND_CACHE_IMAGE}:buildcache" \
         -t "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" \
         -t "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
         ./frontend
@@ -182,8 +178,8 @@ build:frontend:
         docker push "${FRONTEND_IMAGE}:latest"
       fi
 
-      docker tag "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" "${FRONTEND_IMAGE}:buildcache"
-      docker push "${FRONTEND_IMAGE}:buildcache"
+      docker tag "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" "${FRONTEND_CACHE_IMAGE}:buildcache"
+      docker push "${FRONTEND_CACHE_IMAGE}:buildcache"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE: gitops  (solo main / tags)
