@@ -1,66 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# PP-AI — GitLab CI/CD Pipeline
+# PP-AI — GitLab CI/CD Pipeline (FIX para Harbor/Trivy)
 #
-# Stages
-#   test    → typecheck + unit tests        (todos los branches y MRs)
-#   build   → docker build + push a Harbor  (solo main y tags)
-#   deploy  → genera .env + reinicia server (manual, solo main y tags)
-#
-# ┌─────────────────────────────────────────────────────────────────────────┐
-# │ VARIABLES requeridas en GitLab → Settings → CI/CD → Variables          │
-# │                                                                         │
-# │ ── Harbor ──────────────────────────────────────────────────────────── │
-# │  HARBOR_URL          Variable  no-mask   harbor.example.com             │
-# │  HARBOR_PROJECT      Variable  no-mask   pp-ai                          │
-# │  HARBOR_USER         Variable  no-mask   robot$pp-ai+ci                 │
-# │  HARBOR_PASSWORD     Variable  MASK+PROT <robot secret>                 │
-# │                                                                         │
-# │ ── Deploy SSH ──────────────────────────────────────────────────────── │
-# │  DEPLOY_HOST         Variable  no-mask   10.0.0.50 o prod.app.com       │
-# │  DEPLOY_USER         Variable  no-mask   ubuntu                         │
-# │  DEPLOY_PATH         Variable  no-mask   /opt/pp-ai                     │
-# │  DEPLOY_SSH_KEY      File      MASK+PROT <clave privada SSH>            │
-# │                                                                         │
-# │ ── Base de datos (producción) ──────────────────────────────────────── │
-# │  DB_NAME             Variable  no-mask   ppai                           │
-# │  DB_USER             Variable  no-mask   ppai                           │
-# │  DB_PASSWORD         Variable  MASK+PROT <password prod>                │
-# │                                                                         │
-# │ ── Autenticación ───────────────────────────────────────────────────── │
-# │  JWT_SECRET          Variable  MASK+PROT <string aleatorio largo>       │
-# │                                                                         │
-# │ ── App URLs (producción) ───────────────────────────────────────────── │
-# │  FRONTEND_URL        Variable  no-mask   https://pp-ai.example.com      │
-# │  FRONTEND_PORT       Variable  no-mask   80                             │
-# │                                                                         │
-# │ ── Email ───────────────────────────────────────────────────────────── │
-# │  ENABLE_EMAIL        Variable  no-mask   true                           │
-# │  SMTP_FROM           Variable  no-mask   PP-AI                          │
-# │  SMTP_HOST           Variable  no-mask   smtp.example.com               │
-# │  SMTP_PORT           Variable  no-mask   587                            │
-# │  SMTP_SECURE         Variable  no-mask   false                          │
-# │  SMTP_USER           Variable  no-mask   noreply@example.com            │
-# │  SMTP_PASS           Variable  MASK      <app password gmail>           │
-# │                                                                         │
-# │ ── Google OAuth ────────────────────────────────────────────────────── │
-# │  GOOGLE_CLIENT_ID    Variable  no-mask   <your-google-client-id>        │
-# │  GOOGLE_CLIENT_SECRET Variable MASK      <your-google-client-secret>   │
-# │  GOOGLE_CALLBACK_URL Variable  no-mask   https://.../api/auth/google/cb │
-# │                                                                         │
-# │ ── Keycloak SSO ────────────────────────────────────────────────────── │
-# │  KEYCLOAK_URL           Variable no-mask  http://keycloak:8080          │
-# │  KEYCLOAK_PUBLIC_URL    Variable no-mask  https://keycloak.example.com  │
-# │  KEYCLOAK_REALM         Variable no-mask  ppai                          │
-# │  KEYCLOAK_CLIENT_ID     Variable no-mask  ppai-app                      │
-# │  KEYCLOAK_CLIENT_SECRET Variable MASK+PROT <client secret>              │
-# │  KEYCLOAK_CALLBACK_URL  Variable no-mask  https://.../keycloak/callback │
-# │                                                                         │
-# │ ── Keycloak Admin ──────────────────────────────────────────────────── │
-# │  KC_ADMIN_USER       Variable  no-mask   admin                          │
-# │  KC_ADMIN_PASSWORD   Variable  MASK      <admin password>               │
-# │  KC_DB_USER          Variable  no-mask   keycloak                       │
-# │  KC_DB_PASSWORD      Variable  MASK+PROT <keycloak db password>         │
-# └─────────────────────────────────────────────────────────────────────────┘
+# Cambios clave:
+# - NO usar `docker push --all-tags`
+# - Tags explícitos y tag inmutable CI_COMMIT_SHA (recomendado para escaneo)
+# - buildcache para cache estable
+# - GitOps sin hardcode del registry en yq: usa BACKEND_IMAGE y FRONTEND_IMAGE
 # ─────────────────────────────────────────────────────────────────────────────
 
 stages:
@@ -72,9 +17,15 @@ stages:
 variables:
   DOCKER_TLS_CERTDIR: "/certs"
   DOCKER_DRIVER: overlay2
+
+  # Harbor
+  HARBOR_URL: "registry-nonprod.tigocloud.net"
+  HARBOR_PROJECT: "pp-ai"
+
   BACKEND_IMAGE:  "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-backend"
   FRONTEND_IMAGE: "${HARBOR_URL}/${HARBOR_PROJECT}/pp-ai-frontend"
 
+# Runner
 .prod_runner:
   tags:
     - k8s-prod-tr-hq
@@ -97,7 +48,11 @@ variables:
   services:
     - name: docker:26-dind
       alias: docker
+      # Si tu Harbor usa certificado self-signed o no confiable por Docker,
+      # descomenta la siguiente línea:
+      # command: ["--insecure-registry=registry-nonprod.tigocloud.net"]
   before_script:
+    - set -euo pipefail
     - echo "$HARBOR_PASSWORD" | docker login "$HARBOR_URL" -u "$HARBOR_USER" --password-stdin
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -110,8 +65,10 @@ test:backend:
   image: node:22-alpine
   cache:
     key: "backend-${CI_COMMIT_REF_SLUG}"
-    paths: [backend/node_modules/]
+    paths:
+      - backend/node_modules/
   script:
+    - set -euo pipefail
     - cd backend
     - npm ci
     - npm run typecheck
@@ -123,8 +80,10 @@ test:frontend:
   image: node:22-alpine
   cache:
     key: "frontend-${CI_COMMIT_REF_SLUG}"
-    paths: [frontend/node_modules/]
+    paths:
+      - frontend/node_modules/
   script:
+    - set -euo pipefail
     - cd frontend
     - npm ci
     - npm run typecheck
@@ -142,12 +101,45 @@ build:backend:
     - .prod_runner
   script:
     - |
-      TAGS="-t ${BACKEND_IMAGE}:${CI_COMMIT_SHA} -t ${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
-      [ "$CI_COMMIT_BRANCH" = "main" ] && TAGS="${TAGS} -t ${BACKEND_IMAGE}:latest"
-      [ -n "$CI_COMMIT_TAG" ] && TAGS="${TAGS} -t ${BACKEND_IMAGE}:${CI_COMMIT_TAG} -t ${BACKEND_IMAGE}:latest"
-      docker pull "${BACKEND_IMAGE}:latest" 2>/dev/null || true
-      DOCKER_BUILDKIT=1 docker build --cache-from "${BACKEND_IMAGE}:latest" ${TAGS} ./backend
-      docker push --all-tags "${BACKEND_IMAGE}"
+      set -euo pipefail
+
+      echo "Building BACKEND image: ${BACKEND_IMAGE}"
+
+      # Cache estable (no usar latest para cache)
+      docker pull "${BACKEND_IMAGE}:buildcache" 2>/dev/null || true
+
+      DOCKER_BUILDKIT=1 docker build \
+        --cache-from "${BACKEND_IMAGE}:buildcache" \
+        -t "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" \
+        -t "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        ./backend
+
+      # latest solo como puntero (main / releases)
+      if [ "${CI_COMMIT_BRANCH:-}" = "main" ]; then
+        docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:latest"
+      fi
+
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:${CI_COMMIT_TAG}"
+        docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:latest"
+      fi
+
+      # Push explícito (NO --all-tags)
+      docker push "${BACKEND_IMAGE}:${CI_COMMIT_SHA}"
+      docker push "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
+
+      if [ "${CI_COMMIT_BRANCH:-}" = "main" ]; then
+        docker push "${BACKEND_IMAGE}:latest"
+      fi
+
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        docker push "${BACKEND_IMAGE}:${CI_COMMIT_TAG}"
+        docker push "${BACKEND_IMAGE}:latest"
+      fi
+
+      # Actualiza buildcache al final
+      docker tag "${BACKEND_IMAGE}:${CI_COMMIT_SHA}" "${BACKEND_IMAGE}:buildcache"
+      docker push "${BACKEND_IMAGE}:buildcache"
 
 build:frontend:
   stage: build
@@ -157,12 +149,45 @@ build:frontend:
     - .prod_runner
   script:
     - |
-      TAGS="-t ${FRONTEND_IMAGE}:${CI_COMMIT_SHA} -t ${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
-      [ "$CI_COMMIT_BRANCH" = "main" ] && TAGS="${TAGS} -t ${FRONTEND_IMAGE}:latest"
-      [ -n "$CI_COMMIT_TAG" ] && TAGS="${TAGS} -t ${FRONTEND_IMAGE}:${CI_COMMIT_TAG} -t ${FRONTEND_IMAGE}:latest"
-      docker pull "${FRONTEND_IMAGE}:latest" 2>/dev/null || true
-      DOCKER_BUILDKIT=1 docker build --cache-from "${FRONTEND_IMAGE}:latest" ${TAGS} ./frontend
-      docker push --all-tags "${FRONTEND_IMAGE}"
+      set -euo pipefail
+
+      echo "Building FRONTEND image: ${FRONTEND_IMAGE}"
+
+      docker pull "${FRONTEND_IMAGE}:buildcache" 2>/dev/null || true
+
+      DOCKER_BUILDKIT=1 docker build \
+        --cache-from "${FRONTEND_IMAGE}:buildcache" \
+        -t "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" \
+        -t "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        ./frontend
+
+      if [ "${CI_COMMIT_BRANCH:-}" = "main" ]; then
+        docker tag "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" "${FRONTEND_IMAGE}:latest"
+      fi
+
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        docker tag "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" "${FRONTEND_IMAGE}:${CI_COMMIT_TAG}"
+        docker tag "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" "${FRONTEND_IMAGE}:latest"
+      fi
+
+      docker push "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}"
+      docker push "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
+
+      if [ "${CI_COMMIT_BRANCH:-}" = "main" ]; then
+        docker push "${FRONTEND_IMAGE}:latest"
+      fi
+
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        docker push "${FRONTEND_IMAGE}:${CI_COMMIT_TAG}"
+        docker push "${FRONTEND_IMAGE}:latest"
+      fi
+
+      docker tag "${FRONTEND_IMAGE}:${CI_COMMIT_SHA}" "${FRONTEND_IMAGE}:buildcache"
+      docker push "${FRONTEND_IMAGE}:buildcache"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE: gitops  (solo main / tags)
+# ══════════════════════════════════════════════════════════════════════════════
 
 update:manifests:
   stage: gitops
@@ -170,7 +195,11 @@ update:manifests:
   image: alpine:3.20
   variables:
     GIT_TERMINAL_PROMPT: "0"
+  needs:
+    - job: build:backend
+    - job: build:frontend
   before_script:
+    - set -euo pipefail
     - apk add --no-cache git bash curl
     - YQ_VERSION="v4.44.3"
     - curl -L "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq
@@ -182,13 +211,17 @@ update:manifests:
     - |
       set -euo pipefail
 
+      # Deploy tag: usa release tag si existe, si no usa SHA inmutable
       if [ -n "${CI_COMMIT_TAG:-}" ]; then
         IMAGE_TAG="$CI_COMMIT_TAG"
       else
         IMAGE_TAG="$CI_COMMIT_SHA"
       fi
       export IMAGE_TAG
-      echo "Deploying tag: $IMAGE_TAG"
+
+      echo "Deploying tag: ${IMAGE_TAG}"
+      echo "Backend image name: ${BACKEND_IMAGE}"
+      echo "Frontend image name: ${FRONTEND_IMAGE}"
 
       AUTH_URL="$(echo "$GITOPS_REPO_URL" | sed "s#https://#https://oauth2:${GITOPS_TOKEN}@#")"
       git clone --depth 1 --branch "$GITOPS_TARGET_BRANCH" "$AUTH_URL" gitops
@@ -197,9 +230,10 @@ update:manifests:
       OVERLAY_FILE="${GITOPS_PATH_OVERLAY}/kustomization.yaml"
       test -f "$OVERLAY_FILE" || (echo "ERROR: no existe $OVERLAY_FILE" && exit 1)
 
+      # Actualiza tags para las imágenes (sin hardcode)
       yq -i '
-        (.images[] | select(.name == "registry-nonprod.tigocloud.net/pp-ai/pp-ai-backend")).newTag = strenv(IMAGE_TAG) |
-        (.images[] | select(.name == "registry-nonprod.tigocloud.net/pp-ai/pp-ai-frontend")).newTag = strenv(IMAGE_TAG)
+        (.images[] | select(.name == strenv(BACKEND_IMAGE))).newTag = strenv(IMAGE_TAG) |
+        (.images[] | select(.name == strenv(FRONTEND_IMAGE))).newTag = strenv(IMAGE_TAG)
       ' "$OVERLAY_FILE"
 
       echo "Resultado images:"
