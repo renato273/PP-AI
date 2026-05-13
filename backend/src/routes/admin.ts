@@ -22,11 +22,16 @@ router.put('/settings', async (req: AuthRequest, res: Response) => {
   try {
     const current = await getSettings();
     const body = req.body as Partial<AppSettings & Record<string, unknown>>;
-
+    
+    const isEmpty = (value: any) => value === "" || value === null || value === undefined;
     // Merge: skip masked sensitive fields (keep existing), accept everything else
     const merged: Record<string, unknown> = { ...current };
-    for (const [key, val] of Object.entries(body)) {
-      if (SENSITIVE.includes(key) && val === MASK) continue;
+    for (const [key, val] of Object.entries(body)) {      
+      if (SENSITIVE.includes(key)) {
+        if (val === MASK || isEmpty(val)) continue;
+      }
+
+      if (isEmpty(val)) continue;
       merged[key] = val;
     }
 
