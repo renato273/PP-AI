@@ -97,9 +97,12 @@ router.post('/register', async (req: Request, res: Response) => {
 router.get('/providers', async (_req: Request, res: Response) => {
   try {
     const s = await getSettings();
+    // Show button whenever admin explicitly enabled the provider.
+    // If config is incomplete the user will see an error on click — better than
+    // silently hiding a button the admin intentionally activated.
     res.json({
-      google:   s.google_enabled   && !!(s.google_client_id && s.google_client_secret),
-      keycloak: s.keycloak_enabled && !!(s.keycloak_url && s.keycloak_realm && s.keycloak_client_id),
+      google:   s.google_enabled,
+      keycloak: s.keycloak_enabled,
     });
   } catch {
     res.json({ google: false, keycloak: false });
