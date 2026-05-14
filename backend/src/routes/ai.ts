@@ -218,8 +218,12 @@ router.post('/generate-plan', requireRole('admin', 'editor'), upload.array('file
   }
 
   const config = await getOne('SELECT * FROM ai_config ORDER BY id LIMIT 1');
-  if (!config || !config.enabled || !config.azure_endpoint || !config.azure_api_key || !config.azure_deployment) {
-    // Cleanup temp files
+  const isConfigured = config?.enabled && (
+    config.provider === 'groq'
+      ? !!config.groq_api_key
+      : !!(config.azure_endpoint && config.azure_api_key && config.azure_deployment)
+  );
+  if (!isConfigured) {
     files?.forEach(f => { try { unlinkSync(f.path); } catch {} });
     res.status(400).json({ error: 'La integración con IA no está configurada o habilitada' });
     return;
@@ -283,18 +287,19 @@ router.post('/generate-plan', requireRole('admin', 'editor'), upload.array('file
       ? userContent
       : textPart.trim();
 
-    const url = `${config.azure_endpoint}/openai/deployments/${config.azure_deployment}/chat/completions?api-version=${config.azure_api_version}`;
+    const { url, headers, body: reqBody } = buildProviderRequest(
+      config,
+      [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user',   content: finalUserContent },
+      ],
+      config.max_tokens || 4000,
+      parseFloat(config.temperature) || 0.7
+    );
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': config.azure_api_key },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: finalUserContent },
-        ],
-        max_tokens: config.max_tokens || 4000,
-        temperature: parseFloat(config.temperature) || 0.7,
-      }),
+      headers,
+      body: JSON.stringify(reqBody),
     });
 
     if (!response.ok) {
@@ -521,7 +526,12 @@ router.post('/chat', requireRole('admin', 'editor'), upload.array('files', 5), a
   }
 
   const config = await getOne('SELECT * FROM ai_config ORDER BY id LIMIT 1');
-  if (!config || !config.enabled || !config.azure_endpoint || !config.azure_api_key || !config.azure_deployment) {
+  const chatConfigured = config?.enabled && (
+    config.provider === 'groq'
+      ? !!config.groq_api_key
+      : !!(config.azure_endpoint && config.azure_api_key && config.azure_deployment)
+  );
+  if (!chatConfigured) {
     files?.forEach(f => { try { unlinkSync(f.path); } catch {} });
     res.status(400).json({ error: 'La integración con IA no está configurada o habilitada' });
     return;
