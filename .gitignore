@@ -26,3 +26,4 @@ Thumbs.db
 .claude/
 marketing/
 CLAUDE.MD
+gitlab-ci.yml
