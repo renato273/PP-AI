@@ -561,6 +561,7 @@ export default function GanttView({ tareas, dependencias, hitos, onUpdate, onReo
             viewMode={viewMode}
             onDateChange={handleDateChange}
             onProgressChange={handleProgressChange}
+            onExpanderClick={handleExpanderClick}
             TaskListHeader={TaskListHeader}
             TaskListTable={TaskListTable}
             listCellWidth={listCellWidthHint}
